@@ -1,0 +1,37 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate.json
+
+# IntelliJ Related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code Related
+.vscode/
+
+# Flutter/Dart Related
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Android Related
+**/android/local.properties
+**/android/key.properties
+**/android/app/upload-keystore.jks
+**/android/app/upload-keystore.p12
+**/android/app/upload-keystore.pem
+**/android/app/src/main/assets/google-services.json

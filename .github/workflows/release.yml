@@ -1,0 +1,73 @@
+name: Build and Release signed APK
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on tag pushes like v1.0.0, v2.0.1, etc.
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Set up Java Environment
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. Set up Flutter Environment
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      # 4. Install Dependencies
+      - name: Get Dependencies
+        run: flutter pub get
+
+      # 5. Decode Android Keystore from Secret
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+
+      # 6. Build Signed APKs (Fat/Universal APK + Split APKs)
+      - name: Build Flutter APK
+        env:
+          KEYSTORE_PATH: "upload-keystore.jks"
+          STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release
+          flutter build apk --release --split-per-abi
+
+      # 7. Clean up Keystore (Security best practice)
+      - name: Clean up Keystore
+        run: rm -f android/app/upload-keystore.jks
+
+      # 8. Create GitHub Release and Upload Artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
