@@ -32,7 +32,7 @@ class MyApp extends StatelessWidget {
           primary: const Color(0xFF6366F1),
           secondary: const Color(0xFF10B981), // Tailwind emerald-500
         ),
-        cardTheme: const CardTheme(
+        cardTheme: const CardThemeData(
           color: Color(0xFF1E293B), // Tailwind slate-800
           elevation: 4,
           margin: EdgeInsets.symmetric(vertical: 8),
@@ -246,7 +246,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
               const Text('Release Notes:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Container(
-                maxHeight: 120,
+                constraints: const BoxConstraints(maxHeight: 120),
                 width: double.maxFinite,
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -601,7 +601,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
               Icons.warning_amber_rounded,
               'Low Memory Alert',
               isLowMem ? 'ACTIVE' : 'NORMAL',
-              valueColor: isLowMem ? Colors.redAccent : Colors.emerald,
+              valueColor: isLowMem ? Colors.redAccent : Colors.green,
             ),
             const SizedBox(height: 16),
             LinearProgressIndicator(
@@ -694,7 +694,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
               Icons.healing,
               'Health Status',
               health,
-              valueColor: health == 'Good' ? Colors.emerald : Colors.orangeAccent,
+              valueColor: health == 'Good' ? Colors.green : Colors.orangeAccent,
             ),
           ],
         ),

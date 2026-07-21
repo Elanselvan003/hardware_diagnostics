@@ -71,7 +71,7 @@ class MainActivity: FlutterActivity() {
         val abis = Build.SUPPORTED_ABIS.toList()
         var cpuModel = "Unknown"
         try {
-            final val file = File("/proc/cpuinfo")
+            val file = File("/proc/cpuinfo")
             if (file.exists()) {
                 file.forEachLine { line ->
                     if (line.contains("Hardware") || line.contains("model name") || line.contains("Processor")) {
