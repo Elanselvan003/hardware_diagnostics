@@ -90,6 +90,30 @@ class ApiService {
     }
   }
 
+  static Future<bool> sendLiveEphemeralTelemetry(Map<String, dynamic> payload) async {
+    try {
+      final baseUrl = await getApiBaseUrl();
+      final token = await getAuthToken();
+      final uri = Uri.parse('$baseUrl/support/telemetry/live');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        if (token.isNotEmpty) 'Authorization': token.startsWith('Bearer ') ? token : 'Bearer $token',
+      };
+
+      // Direct in-memory request (no disk queuing if offline)
+      final response = await http.post(
+        uri,
+        headers: headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 5));
+
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      return false;
+    }
+  }
+
   static Future<bool> uploadScreenRecording(
     File videoFile, {
     required String appVersion,

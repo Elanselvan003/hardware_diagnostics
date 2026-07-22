@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -30,15 +31,15 @@ class MyApp extends StatelessWidget {
       title: 'Hardware Diagnostics',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0F172A), // Tailwind slate-900
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1), // Tailwind indigo-500
+          seedColor: const Color(0xFF6366F1),
           brightness: Brightness.dark,
           primary: const Color(0xFF6366F1),
-          secondary: const Color(0xFF10B981), // Tailwind emerald-500
+          secondary: const Color(0xFF10B981),
         ),
         cardTheme: const CardThemeData(
-          color: Color(0xFF1E293B), // Tailwind slate-800
+          color: Color(0xFF1E293B),
           elevation: 4,
           margin: EdgeInsets.symmetric(vertical: 8),
         ),
@@ -70,7 +71,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   String _appVersion = '1.2.0';
   String _buildNumber = '3';
 
-  // GitHub repository configuration for updates checking
+  // GitHub repository configuration
   String _githubOwner = 'Elanselvan003';
   String _githubRepo = 'hardware_diagnostics';
 
@@ -85,7 +86,11 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   int _recordedSeconds = 0;
   bool _isUploadingVideo = false;
   double _videoUploadProgress = 0.0;
-  String _recordingStatusMessage = '';
+
+  // Feature 3: Live Ephemeral Monitor State (Zero Disk Storage)
+  bool _isLiveMonitorActive = false;
+  Timer? _liveTelemetryTimer;
+  int _liveStreamUpdatesCount = 0;
 
   // Support API & Retry Queue State
   String _apiBaseUrl = '';
@@ -97,6 +102,13 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   void initState() {
     super.initState();
     _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _liveTelemetryTimer?.cancel();
+    LocationService.stopBackgroundLocationUpdates();
+    super.dispose();
   }
 
   Future<void> _loadInitialData() async {
@@ -169,13 +181,80 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     }
   }
 
+  // Live Ephemeral Stream Mode (Memory Only - No Disk Storage)
+  Future<void> _toggleLiveMonitor(bool value) async {
+    if (value) {
+      final consent = await PrivacyManager.isLocationConsentGranted();
+      if (!consent) {
+        final agreed = await PrivacyManager.showConsentDialog(
+          context: context,
+          title: 'Live Stream Privacy Consent',
+          description: 'Enable live in-memory telemetry streaming to monitor GPS, address, RAM, CPU, and Battery status in real time. NO data or logs are saved to device disk storage.',
+          featureName: 'Live Monitoring',
+        );
+
+        if (!agreed) return;
+        await PrivacyManager.setLocationConsent(true);
+        setState(() {
+          _isLocationEnabled = true;
+        });
+      }
+
+      setState(() {
+        _isLiveMonitorActive = true;
+        _liveStreamUpdatesCount = 0;
+      });
+
+      // Start high-frequency in-memory GPS stream
+      LocationService.startLiveLocationStream((location) {
+        if (mounted) {
+          setState(() {
+            _currentLocation = location;
+            _liveStreamUpdatesCount++;
+          });
+        }
+
+        // Transmit live in-memory telemetry to support server (no disk queuing)
+        ApiService.buildTelemetryData(
+          locationData: location,
+          cpuInfo: _cpuInfo,
+          appVersion: '$_appVersion+$_buildNumber',
+        ).then((payload) {
+          ApiService.sendLiveEphemeralTelemetry(payload);
+        });
+      });
+
+      // Periodically refresh hardware stats in RAM every 2 seconds
+      _liveTelemetryTimer?.cancel();
+      _liveTelemetryTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+        if (_isLiveMonitorActive) {
+          final ram = await platform.invokeMethod('getRAMInfo');
+          final battery = await platform.invokeMethod('getBatteryInfo');
+          if (mounted) {
+            setState(() {
+              _ramInfo = ram != null ? Map<String, dynamic>.from(ram) : null;
+              _batteryInfo = battery != null ? Map<String, dynamic>.from(battery) : null;
+            });
+          }
+        }
+      });
+    } else {
+      _liveTelemetryTimer?.cancel();
+      _liveTelemetryTimer = null;
+      LocationService.stopBackgroundLocationUpdates();
+      setState(() {
+        _isLiveMonitorActive = false;
+      });
+    }
+  }
+
   // Location Operations
   Future<void> _toggleLocationConsent(bool value) async {
     if (value) {
       final agreed = await PrivacyManager.showConsentDialog(
         context: context,
         title: 'Location Tracking Permission',
-        description: 'Allow Hardware Diagnostics to collect precise GPS coordinates and reverse-geocode your address. This data helps your support team diagnose location-dependent issues.',
+        description: 'Allow Hardware Diagnostics to collect precise GPS coordinates and reverse-geocode your address. Data is processed in memory and sent to your private support team API.',
         featureName: 'Location',
       );
 
@@ -191,6 +270,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
       LocationService.stopBackgroundLocationUpdates();
       setState(() {
         _isLocationEnabled = false;
+        _isLiveMonitorActive = false;
         _currentLocation = null;
       });
     }
@@ -213,7 +293,6 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   // Screen Recording Operations
   Future<void> _toggleScreenRecording() async {
     if (_isRecording) {
-      // Stop recording
       final videoFile = await ScreenRecordingService.stopRecording();
       setState(() {
         _isRecording = false;
@@ -223,17 +302,16 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
         _showVideoUploadDialog(videoFile);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Screen recording stopped. No video saved.')),
+          const SnackBar(content: Text('Screen recording stopped.')),
         );
       }
     } else {
-      // Start recording with Privacy check
       final consent = await PrivacyManager.isRecordingConsentGranted();
       if (!consent) {
         final agreed = await PrivacyManager.showConsentDialog(
           context: context,
           title: 'Screen Recording Consent',
-          description: 'Allow Hardware Diagnostics to record your screen and microphone. Recordings are compressed and sent securely to your support team to debug visual issues.',
+          description: 'Allow Hardware Diagnostics to record your screen and microphone. Video is compressed and uploaded to your support team API.',
           featureName: 'Screen Recording',
         );
 
@@ -257,7 +335,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to start screen recording. Please grant system permissions.')),
+          const SnackBar(content: Text('Failed to start screen recording. Check system permissions.')),
         );
       }
     }
@@ -275,7 +353,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Recording saved locally: ${videoFile.path.split('/').last}'),
+              Text('Recording file: ${videoFile.path.split('/').last}', style: const TextStyle(color: Color(0xFF94A3B8))),
               const SizedBox(height: 12),
               if (_isUploadingVideo) ...[
                 LinearProgressIndicator(
@@ -295,7 +373,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
               : [
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('Keep Local Only', style: TextStyle(color: Colors.white70)),
+                    child: const Text('Keep Local', style: TextStyle(color: Colors.white70)),
                   ),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.cloud_upload, size: 18),
@@ -739,6 +817,9 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
                         _buildHeaderCard(),
                         const SizedBox(height: 8),
 
+                        // Live Monitoring Mode (No Disk Storage)
+                        _buildLiveMonitorCard(),
+
                         // Feature 1: Location Tracking Card
                         _buildSectionHeader('Location Tracking & GPS'),
                         _buildLocationCard(),
@@ -880,6 +961,81 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
             'Target Support API: ${_apiBaseUrl.isEmpty ? 'Not Configured' : _apiBaseUrl}',
             style: const TextStyle(fontSize: 12, color: Colors.white70, fontStyle: FontStyle.italic),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveMonitorCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _isLiveMonitorActive ? const Color(0xFF0F2942) : const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isLiveMonitorActive ? const Color(0xFF10B981) : const Color(0xFF334155),
+          width: _isLiveMonitorActive ? 2 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.sensors,
+                    color: _isLiveMonitorActive ? const Color(0xFF10B981) : Colors.white70,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Live Ephemeral Monitor Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ],
+              ),
+              Switch(
+                value: _isLiveMonitorActive,
+                activeColor: const Color(0xFF10B981),
+                onChanged: _toggleLiveMonitor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: const [
+              Icon(Icons.shield, size: 14, color: Color(0xFF10B981)),
+              SizedBox(width: 6),
+              Text(
+                'Memory-only live stream. NO location logs saved to disk.',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
+            ],
+          ),
+          if (_isLiveMonitorActive) ...[
+            const Divider(color: Color(0xFF334155), height: 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.circle, color: Color(0xFF10B981), size: 8),
+                      SizedBox(width: 6),
+                      Text('LIVE STREAMING', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Text('Updates: $_liveStreamUpdatesCount', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+            ),
+          ]
         ],
       ),
     );

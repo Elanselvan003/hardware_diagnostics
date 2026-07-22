@@ -110,11 +110,13 @@ class LocationService {
     }
   }
 
-  static void startBackgroundLocationUpdates(Function(LocationDataModel) onLocationUpdate) {
+  static void startLiveLocationStream(Function(LocationDataModel) onLocationUpdate) {
     stopBackgroundLocationUpdates();
+    
+    // High-frequency in-memory stream for live UI monitoring (no disk storage)
     const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10,
+      accuracy: LocationAccuracy.best,
+      distanceFilter: 0, // Updates on any small position change
     );
 
     _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen((Position position) async {
@@ -128,7 +130,9 @@ class LocationService {
           fullAddress = '${place.street ?? ''}, ${place.locality ?? ''}, ${place.administrativeArea ?? ''}'.replaceAll(RegExp(r'^,\s*'), '');
           country = place.country ?? 'Unknown Country';
         }
-      } catch (_) {}
+      } catch (_) {
+        fullAddress = 'Lat: ${position.latitude.toStringAsFixed(5)}, Long: ${position.longitude.toStringAsFixed(5)}';
+      }
 
       _lastLocation = LocationDataModel(
         latitude: position.latitude,
