@@ -44,7 +44,6 @@
       margin: 0 auto;
     }
 
-    /* Top Navigation Bar */
     header {
       display: flex;
       justify-content: space-between;
@@ -86,7 +85,7 @@
     .header-controls {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
     }
 
     .live-badge {
@@ -117,7 +116,7 @@
       100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
 
-    .btn-refresh {
+    .btn-action {
       background: rgba(99, 102, 241, 0.2);
       border: 1px solid var(--primary);
       color: #fff;
@@ -128,12 +127,11 @@
       transition: all 0.2s ease;
     }
 
-    .btn-refresh:hover {
+    .btn-action:hover {
       background: var(--primary);
       box-shadow: 0 4px 14px var(--primary-glow);
     }
 
-    /* Metric Cards Grid */
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -182,7 +180,6 @@
       color: var(--text-muted);
     }
 
-    /* Main Content Layout */
     .section-title {
       font-size: 16px;
       font-weight: 700;
@@ -201,7 +198,6 @@
       margin-bottom: 32px;
     }
 
-    /* Devices Table */
     .table-responsive {
       overflow-x: auto;
     }
@@ -261,7 +257,6 @@
       text-overflow: ellipsis;
     }
 
-    /* Screen Recordings Gallery */
     .recordings-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -273,21 +268,12 @@
       border: 1px solid var(--card-border);
       border-radius: 12px;
       overflow: hidden;
-      transition: all 0.2s ease;
-    }
-
-    .video-card:hover {
-      border-color: var(--primary);
     }
 
     .video-preview {
       width: 100%;
       height: 160px;
       background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
     }
 
     .video-preview video {
@@ -317,30 +303,73 @@
       padding: 48px;
       color: var(--text-muted);
     }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal-card {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      width: 90%;
+      max-width: 480px;
+    }
+
+    .modal-card h2 {
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      color: #fff;
+      margin-top: 6px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
   </style>
 </head>
 <body>
 
   <div class="container">
-    <!-- Header -->
     <header>
       <div class="brand">
         <div class="brand-icon">📱</div>
         <div class="brand-title">
-          <h1>Hardware Diagnostics Support Portal</h1>
-          <p>Live Mobile Device Telemetry & Screen Session Monitor</p>
+          <h1>Hardware Diagnostics Cloud Support Portal</h1>
+          <p>Live Web Dashboard Hosted on GitHub Pages</p>
         </div>
       </div>
       <div class="header-controls">
         <div class="live-badge">
           <div class="pulse-dot"></div>
-          <span>LIVE MONITORING</span>
+          <span>GITHUB PAGES CLOUD</span>
         </div>
-        <button class="btn-refresh" onclick="fetchDashboardData()">↻ Refresh Data</button>
+        <button class="btn-action" onclick="openConfigModal()">⚙️ API Settings</button>
+        <button class="btn-action" onclick="fetchDashboardData()">↻ Refresh</button>
       </div>
     </header>
 
-    <!-- Metrics Bar -->
     <div class="metrics-grid">
       <div class="metric-card">
         <div class="metric-icon icon-indigo">📊</div>
@@ -372,10 +401,9 @@
       </div>
     </div>
 
-    <!-- Active Devices Section -->
     <div class="card-panel">
       <div class="section-title">
-        <span>🌐</span> Active Connected Devices & GPS Telemetry
+        <span>🌐</span> Connected Devices & GPS Telemetry Feed
       </div>
       <div class="table-responsive">
         <table>
@@ -399,7 +427,6 @@
       </div>
     </div>
 
-    <!-- Screen Recordings Gallery Section -->
     <div class="card-panel">
       <div class="section-title">
         <span>🎥</span> Uploaded Screen Recordings
@@ -408,27 +435,60 @@
         <div class="empty-state" style="grid-column: 1 / -1;">No screen recordings uploaded yet.</div>
       </div>
     </div>
+  </div>
 
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="config-modal">
+    <div class="modal-card">
+      <h2>Configure Support Backend API</h2>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+        Set the API endpoint URL where your mobile apps send telemetry and screen recordings.
+      </p>
+      <label style="font-size: 12px; font-weight: bold; color: var(--primary);">SUPPORT API SERVER URL</label>
+      <input type="text" id="input-api-url" class="input-field" placeholder="e.g. https://support.yourdomain.com/api/v1">
+
+      <div class="modal-actions">
+        <button class="btn-action" style="background: transparent; border-color: var(--card-border);" onclick="closeConfigModal()">Cancel</button>
+        <button class="btn-action" onclick="saveConfigModal()">Save Backend URL</button>
+      </div>
+    </div>
   </div>
 
   <script>
+    let apiBaseUrl = localStorage.getItem('cloud_support_api_url') || window.location.origin;
+
+    function openConfigModal() {
+      document.getElementById('input-api-url').value = apiBaseUrl;
+      document.getElementById('config-modal').style.display = 'flex';
+    }
+
+    function closeConfigModal() {
+      document.getElementById('config-modal').style.display = 'none';
+    }
+
+    function saveConfigModal() {
+      apiBaseUrl = document.getElementById('input-api-url').value.trim().replace(/\/$/, '');
+      localStorage.setItem('cloud_support_api_url', apiBaseUrl);
+      closeConfigModal();
+      fetchDashboardData();
+    }
+
     async function fetchDashboardData() {
       try {
-        const response = await fetch('/api/v1/support/devices');
+        const endpoint = apiBaseUrl.endsWith('/api/v1') ? `${apiBaseUrl}/support/devices` : `${apiBaseUrl}/api/v1/support/devices`;
+        const response = await fetch(endpoint);
         if (!response.ok) return;
 
         const data = await response.json();
         
-        // Update stats
         document.getElementById('stat-total-devices').innerText = data.total_devices || 0;
         document.getElementById('stat-active-devices').innerText = data.active_devices || 0;
         document.getElementById('stat-location-pings').innerText = data.total_telemetry || 0;
         document.getElementById('stat-recordings-count').innerText = (data.recordings || []).length;
 
-        // Render Devices Table
         const tableBody = document.getElementById('devices-table-body');
         if (!data.devices || data.devices.length === 0) {
-          tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected devices detected yet. Configure your mobile app to point to this server URL!</td></tr>`;
+          tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected devices detected yet. Point your mobile app's API Base URL to: <code>${apiBaseUrl}</code>!</td></tr>`;
         } else {
           tableBody.innerHTML = data.devices.map(dev => {
             const loc = dev.location || {};
@@ -459,7 +519,6 @@
           }).join('');
         }
 
-        // Render Screen Recordings
         const grid = document.getElementById('recordings-grid');
         const recordings = data.recordings || [];
         if (recordings.length === 0) {
@@ -468,7 +527,7 @@
           grid.innerHTML = recordings.map(rec => `
             <div class="video-card">
               <div class="video-preview">
-                <video src="${rec.url}" controls></video>
+                <video src="${rec.url.startsWith('http') ? rec.url : apiBaseUrl + rec.url}" controls></video>
               </div>
               <div class="video-info">
                 <h4>${rec.filename}</h4>
@@ -484,7 +543,6 @@
       }
     }
 
-    // Auto-refresh every 3 seconds for real-time monitoring
     setInterval(fetchDashboardData, 3000);
     fetchDashboardData();
   </script>
