@@ -10,7 +10,7 @@ class ApiService {
   static const String _keyAuthToken = 'support_api_auth_token';
   static const String _keyRetryQueue = 'support_api_retry_queue';
 
-  static const String _defaultApiUrl = 'https://support.example.com/api/v1';
+  static const String _defaultApiUrl = '';
 
   static Future<String> getApiBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();

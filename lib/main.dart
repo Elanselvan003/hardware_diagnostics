@@ -419,6 +419,17 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
 
   // Telemetry API Operations
   Future<void> _sendTelemetryData() async {
+    if (_apiBaseUrl.isEmpty) {
+      _showSettingsDialog();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your Support API Base URL in Settings (gear icon).'),
+          backgroundColor: Colors.orangeAccent,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isSyncingApi = true;
     });
@@ -440,7 +451,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
       SnackBar(
         content: Text(success
             ? 'Telemetry & Location payload sent successfully to support API!'
-            : 'API unreachable. Payload queued for automatic retry.'),
+            : 'API unreachable. Check server status or API URL in Settings.'),
         backgroundColor: success ? Colors.green : Colors.orangeAccent,
       ),
     );
