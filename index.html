@@ -493,6 +493,44 @@
       fetchDashboardData();
     }
 
+    async function fetchDashboardData() {
+      if (!apiBaseUrl) {
+        renderDemoData();
+        return;
+      }
+
+      try {
+        let endpoint = apiBaseUrl;
+        if (!endpoint.endsWith('/support/devices')) {
+          endpoint = endpoint.endsWith('/api/v1') ? `${endpoint}/support/devices` : `${endpoint}/api/v1/support/devices`;
+        }
+
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          renderDemoData();
+          return;
+        }
+
+        const data = await response.json();
+        
+        document.getElementById('stat-total-devices').innerText = data.total_devices || 0;
+        document.getElementById('stat-active-devices').innerText = data.active_devices || 0;
+        document.getElementById('stat-location-pings').innerText = data.total_telemetry || 0;
+        document.getElementById('stat-recordings-count').innerText = (data.recordings || []).length;
+
+        const tableBody = document.getElementById('devices-table-body');
+        if (!data.devices || data.devices.length === 0) {
+          tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected devices detected yet. Send telemetry from your mobile phone to see it live here!</td></tr>`;
+        } else {
+          renderTable(data.devices);
+        }
+
+        renderRecordings(data.recordings || []);
+      } catch (err) {
+        renderDemoData();
+      }
+    }
+
     function renderDemoData() {
       document.getElementById('stat-total-devices').innerText = 0;
       document.getElementById('stat-active-devices').innerText = 0;
