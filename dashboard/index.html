@@ -493,66 +493,13 @@
       fetchDashboardData();
     }
 
-    const sampleDemoDevices = [
-      {
-        device_id: 'device_android_94103',
-        is_online: true,
-        app_version: '1.2.0',
-        location: {
-          latitude: 37.7749,
-          longitude: -122.4194,
-          address: '123 Market St, San Francisco, CA 94103',
-          country: 'United States'
-        },
-        device_info: {
-          brand: 'Samsung',
-          model: 'Galaxy S23 Ultra',
-          os_version: 'Android 14'
-        },
-        last_ping: 'Just now (Demo)'
-      }
-    ];
-
-    async function fetchDashboardData() {
-      if (!apiBaseUrl || apiBaseUrl.includes('github.io')) {
-        renderDemoData();
-        return;
-      }
-
-      try {
-        const endpoint = apiBaseUrl.endsWith('/api/v1') ? `${apiBaseUrl}/support/devices` : `${apiBaseUrl}/api/v1/support/devices`;
-        const response = await fetch(endpoint);
-        if (!response.ok) {
-          renderDemoData();
-          return;
-        }
-
-        const data = await response.json();
-        
-        document.getElementById('stat-total-devices').innerText = data.total_devices || 0;
-        document.getElementById('stat-active-devices').innerText = data.active_devices || 0;
-        document.getElementById('stat-location-pings').innerText = data.total_telemetry || 0;
-        document.getElementById('stat-recordings-count').innerText = (data.recordings || []).length;
-
-        const tableBody = document.getElementById('devices-table-body');
-        if (!data.devices || data.devices.length === 0) {
-          tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected devices detected yet. Configure your mobile app API Base URL to point to: <code>${apiBaseUrl}</code>!</td></tr>`;
-        } else {
-          renderTable(data.devices);
-        }
-
-        renderRecordings(data.recordings || []);
-      } catch (err) {
-        renderDemoData();
-      }
-    }
-
     function renderDemoData() {
-      document.getElementById('stat-total-devices').innerText = 1;
-      document.getElementById('stat-active-devices').innerText = 1;
-      document.getElementById('stat-location-pings').innerText = 14;
+      document.getElementById('stat-total-devices').innerText = 0;
+      document.getElementById('stat-active-devices').innerText = 0;
+      document.getElementById('stat-location-pings').innerText = 0;
       document.getElementById('stat-recordings-count').innerText = 0;
-      renderTable(sampleDemoDevices);
+      const tableBody = document.getElementById('devices-table-body');
+      tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected mobile devices yet. Open the app on your phone and configure the Support API URL in Settings (gear icon) to see your phone live here!</td></tr>`;
     }
 
     function renderTable(devices) {
