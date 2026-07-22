@@ -125,7 +125,10 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     });
 
     if (_isLocationEnabled) {
-      _fetchLocation();
+      await _fetchLocation();
+      if (!_isLiveMonitorActive) {
+        _toggleLiveMonitor(true);
+      }
     }
   }
 
@@ -675,9 +678,9 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   }
 
   void _showSettingsDialog() {
-    final ownerController = TextEditingController(text: _githubOwner);
-    final repoController = TextEditingController(text: _githubRepo);
-    final apiBaseUrlController = TextEditingController(text: _apiBaseUrl);
+    final apiBaseUrlController = TextEditingController(
+      text: _apiBaseUrl.isEmpty ? 'https://hardware-diagnostics.onrender.com/api/v1' : _apiBaseUrl,
+    );
     final apiTokenController = TextEditingController(text: _apiToken);
 
     showDialog(
@@ -696,7 +699,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
                 controller: apiBaseUrlController,
                 decoration: const InputDecoration(
                   labelText: 'Support API Base URL',
-                  hintText: 'e.g., https://support.domain.com/api/v1',
+                  hintText: 'https://hardware-diagnostics.onrender.com/api/v1',
                 ),
               ),
               const SizedBox(height: 12),
@@ -704,24 +707,8 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
                 controller: apiTokenController,
                 obscureText: true,
                 decoration: const InputDecoration(
-                  labelText: 'API Authorization Token',
+                  labelText: 'API Authorization Token (Optional)',
                   hintText: 'e.g., Bearer token_secret_123',
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text('GITHUB RELEASES UPDATER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ownerController,
-                decoration: const InputDecoration(
-                  labelText: 'GitHub Owner (username)',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: repoController,
-                decoration: const InputDecoration(
-                  labelText: 'Repository Name',
                 ),
               ),
             ],
@@ -730,21 +717,28 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
           ),
           ElevatedButton(
             onPressed: () async {
+              final newUrl = apiBaseUrlController.text.trim();
+              final newToken = apiTokenController.text.trim();
+
+              final finalUrl = newUrl.isEmpty ? 'https://hardware-diagnostics.onrender.com/api/v1' : newUrl;
+
+              await ApiService.setApiBaseUrl(finalUrl);
+              await ApiService.setAuthToken(newToken);
+
               setState(() {
-                _githubOwner = ownerController.text.trim();
-                _githubRepo = repoController.text.trim();
-                _apiBaseUrl = apiBaseUrlController.text.trim();
-                _apiToken = apiTokenController.text.trim();
+                _apiBaseUrl = finalUrl;
+                _apiToken = newToken;
               });
 
-              await ApiService.setApiBaseUrl(_apiBaseUrl);
-              await ApiService.setAuthToken(_apiToken);
-
               if (mounted) Navigator.of(context).pop();
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Settings saved successfully!'), backgroundColor: Colors.green),
+              );
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
             child: const Text('Save Settings', style: TextStyle(color: Colors.white)),

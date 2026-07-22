@@ -9,7 +9,7 @@ class PrivacyManager {
 
   static Future<bool> isLocationConsentGranted() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyLocationConsent) ?? false;
+    return prefs.getBool(_keyLocationConsent) ?? true;
   }
 
   static Future<void> setLocationConsent(bool granted) async {
