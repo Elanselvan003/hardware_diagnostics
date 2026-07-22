@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:ed_screen_recorder/ed_screen_recorder.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter_screen_recording/flutter_screen_recording.dart';
 
 class ScreenRecordingService {
-  static final EdScreenRecorder _recorder = EdScreenRecorder();
   static bool _isRecording = false;
   static Timer? _timer;
   static int _recordedSeconds = 0;
@@ -21,25 +19,24 @@ class ScreenRecordingService {
     if (_isRecording) return false;
 
     try {
-      final Directory appDir = await getApplicationDocumentsDirectory();
-      final String folderPath = '${appDir.path}/Recordings';
-      final Directory folder = Directory(folderPath);
-      if (!await folder.exists()) {
-        await folder.create(recursive: true);
+      final String fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}';
+      bool started = false;
+
+      if (audio) {
+        started = await FlutterScreenRecording.startRecordScreenAndAudio(
+          fileName,
+          titleNotification: "Diagnostics Screen Recording",
+          messageNotification: "Recording screen and audio...",
+        );
+      } else {
+        started = await FlutterScreenRecording.startRecordScreen(
+          fileName,
+          titleNotification: "Diagnostics Screen Recording",
+          messageNotification: "Recording screen...",
+        );
       }
 
-      final String fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}';
-
-      final RecordOutput? result = await _recorder.startRecordScreen(
-        fileName: fileName,
-        dirPathToSave: folderPath,
-        width: 1080,
-        height: 1920,
-        audioEnable: audio,
-        addTimeCode: true,
-      );
-
-      if (result != null) {
+      if (started) {
         _isRecording = true;
         _recordedSeconds = 0;
         _timer?.cancel();
@@ -64,10 +61,13 @@ class ScreenRecordingService {
       _timer = null;
       _isRecording = false;
 
-      final RecordOutput? result = await _recorder.stopRecord();
-      if (result != null && result.file != null) {
-        _lastVideoPath = result.file!.path;
-        return result.file;
+      final String path = await FlutterScreenRecording.stopRecordScreen;
+      if (path.isNotEmpty) {
+        _lastVideoPath = path;
+        final file = File(path);
+        if (await file.exists()) {
+          return file;
+        }
       }
       return null;
     } catch (e) {
