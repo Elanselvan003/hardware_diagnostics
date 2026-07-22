@@ -7,6 +7,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'services/privacy_manager.dart';
+import 'services/location_service.dart';
+import 'services/screen_recording_service.dart';
+import 'services/api_service.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -62,18 +67,70 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   String _errorMessage = '';
 
   // App version
-  String _appVersion = '1.0.0';
-  String _buildNumber = '1';
+  String _appVersion = '1.2.0';
+  String _buildNumber = '3';
 
   // GitHub repository configuration for updates checking
-  // Users can edit this in the UI to match their own repository
-  String _githubOwner = 'your-github-username';
-  String _githubRepo = 'your-repo-name';
+  String _githubOwner = 'Elanselvan003';
+  String _githubRepo = 'hardware_diagnostics';
+
+  // Feature 1: Location Tracking State
+  bool _isLocationEnabled = false;
+  bool _isLocationLoading = false;
+  LocationDataModel? _currentLocation;
+
+  // Feature 2: Screen Recording State
+  bool _isRecording = false;
+  bool _recordAudio = true;
+  int _recordedSeconds = 0;
+  bool _isUploadingVideo = false;
+  double _videoUploadProgress = 0.0;
+  String _recordingStatusMessage = '';
+
+  // Support API & Retry Queue State
+  String _apiBaseUrl = '';
+  String _apiToken = '';
+  int _queuedPayloads = 0;
+  bool _isSyncingApi = false;
 
   @override
   void initState() {
     super.initState();
-    _loadAllInfo();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadAllInfo();
+    await _loadPrivacyPreferences();
+    await _loadApiSettings();
+    _checkQueuedPayloads();
+  }
+
+  Future<void> _loadPrivacyPreferences() async {
+    final locationGranted = await PrivacyManager.isLocationConsentGranted();
+    setState(() {
+      _isLocationEnabled = locationGranted;
+    });
+
+    if (_isLocationEnabled) {
+      _fetchLocation();
+    }
+  }
+
+  Future<void> _loadApiSettings() async {
+    final url = await ApiService.getApiBaseUrl();
+    final token = await ApiService.getAuthToken();
+    setState(() {
+      _apiBaseUrl = url;
+      _apiToken = token;
+    });
+  }
+
+  Future<void> _checkQueuedPayloads() async {
+    final count = await ApiService.getQueuedPayloadCount();
+    setState(() {
+      _queuedPayloads = count;
+    });
   }
 
   Future<void> _loadAllInfo() async {
@@ -87,7 +144,6 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
       _appVersion = packageInfo.version;
       _buildNumber = packageInfo.buildNumber;
 
-      // Platform channel calls
       final cpu = await platform.invokeMethod('getCPUInfo');
       final ram = await platform.invokeMethod('getRAMInfo');
       final storage = await platform.invokeMethod('getStorageInfo');
@@ -113,10 +169,231 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     }
   }
 
+  // Location Operations
+  Future<void> _toggleLocationConsent(bool value) async {
+    if (value) {
+      final agreed = await PrivacyManager.showConsentDialog(
+        context: context,
+        title: 'Location Tracking Permission',
+        description: 'Allow Hardware Diagnostics to collect precise GPS coordinates and reverse-geocode your address. This data helps your support team diagnose location-dependent issues.',
+        featureName: 'Location',
+      );
+
+      if (agreed) {
+        await PrivacyManager.setLocationConsent(true);
+        setState(() {
+          _isLocationEnabled = true;
+        });
+        await _fetchLocation();
+      }
+    } else {
+      await PrivacyManager.setLocationConsent(false);
+      LocationService.stopBackgroundLocationUpdates();
+      setState(() {
+        _isLocationEnabled = false;
+        _currentLocation = null;
+      });
+    }
+  }
+
+  Future<void> _fetchLocation() async {
+    if (!_isLocationEnabled) return;
+
+    setState(() {
+      _isLocationLoading = true;
+    });
+
+    final loc = await LocationService.getCurrentLocation();
+    setState(() {
+      _currentLocation = loc;
+      _isLocationLoading = false;
+    });
+  }
+
+  // Screen Recording Operations
+  Future<void> _toggleScreenRecording() async {
+    if (_isRecording) {
+      // Stop recording
+      final videoFile = await ScreenRecordingService.stopRecording();
+      setState(() {
+        _isRecording = false;
+      });
+
+      if (videoFile != null && await videoFile.exists()) {
+        _showVideoUploadDialog(videoFile);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Screen recording stopped. No video saved.')),
+        );
+      }
+    } else {
+      // Start recording with Privacy check
+      final consent = await PrivacyManager.isRecordingConsentGranted();
+      if (!consent) {
+        final agreed = await PrivacyManager.showConsentDialog(
+          context: context,
+          title: 'Screen Recording Consent',
+          description: 'Allow Hardware Diagnostics to record your screen and microphone. Recordings are compressed and sent securely to your support team to debug visual issues.',
+          featureName: 'Screen Recording',
+        );
+
+        if (!agreed) return;
+        await PrivacyManager.setRecordingConsent(true);
+      }
+
+      final started = await ScreenRecordingService.startRecording(audio: _recordAudio);
+      if (started) {
+        setState(() {
+          _isRecording = true;
+          _recordedSeconds = 0;
+        });
+
+        ScreenRecordingService.timerStream.listen((seconds) {
+          if (mounted) {
+            setState(() {
+              _recordedSeconds = seconds;
+            });
+          }
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to start screen recording. Please grant system permissions.')),
+        );
+      }
+    }
+  }
+
+  void _showVideoUploadDialog(File videoFile) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          title: const Text('Upload Screen Recording', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Recording saved locally: ${videoFile.path.split('/').last}'),
+              const SizedBox(height: 12),
+              if (_isUploadingVideo) ...[
+                LinearProgressIndicator(
+                  value: _videoUploadProgress,
+                  backgroundColor: const Color(0xFF334155),
+                  color: const Color(0xFF6366F1),
+                ),
+                const SizedBox(height: 8),
+                Text('${(_videoUploadProgress * 100).toStringAsFixed(1)}% uploaded...', style: const TextStyle(fontSize: 12, color: Colors.white70)),
+              ] else ...[
+                const Text('Would you like to upload this recording to your support team website API?', style: TextStyle(color: Color(0xFF94A3B8))),
+              ]
+            ],
+          ),
+          actions: _isUploadingVideo
+              ? []
+              : [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Keep Local Only', style: TextStyle(color: Colors.white70)),
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.cloud_upload, size: 18),
+                    label: const Text('Upload to API'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+                    onPressed: () async {
+                      setDialogState(() {
+                        _isUploadingVideo = true;
+                        _videoUploadProgress = 0.0;
+                      });
+
+                      final success = await ApiService.uploadScreenRecording(
+                        videoFile,
+                        appVersion: _appVersion,
+                        onProgress: (p) {
+                          setDialogState(() {
+                            _videoUploadProgress = p;
+                          });
+                        },
+                      );
+
+                      setDialogState(() {
+                        _isUploadingVideo = false;
+                      });
+
+                      if (mounted) Navigator.of(ctx).pop();
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(success
+                              ? 'Screen recording uploaded successfully to support API!'
+                              : 'Upload failed. File saved locally.'),
+                          backgroundColor: success ? Colors.green : Colors.redAccent,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+        ),
+      ),
+    );
+  }
+
+  // Telemetry API Operations
+  Future<void> _sendTelemetryData() async {
+    setState(() {
+      _isSyncingApi = true;
+    });
+
+    final payload = await ApiService.buildTelemetryData(
+      locationData: _currentLocation,
+      cpuInfo: _cpuInfo,
+      appVersion: '$_appVersion+$_buildNumber',
+    );
+
+    final success = await ApiService.sendTelemetryPayload(payload);
+    await _checkQueuedPayloads();
+
+    setState(() {
+      _isSyncingApi = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success
+            ? 'Telemetry & Location payload sent successfully to support API!'
+            : 'API unreachable. Payload queued for automatic retry.'),
+        backgroundColor: success ? Colors.green : Colors.orangeAccent,
+      ),
+    );
+  }
+
+  Future<void> _retryPendingQueue() async {
+    setState(() {
+      _isSyncingApi = true;
+    });
+
+    final sentCount = await ApiService.retryQueuedPayloads();
+    await _checkQueuedPayloads();
+
+    setState(() {
+      _isSyncingApi = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Retried queue: $sentCount payloads sent successfully.'),
+        backgroundColor: Colors.indigoAccent,
+      ),
+    );
+  }
+
+  // Standard JSON & Update Actions
   Map<String, dynamic> _collectExportData() {
     return {
       'timestamp': DateTime.now().toIso8601String(),
       'app_version': '$_appVersion+$_buildNumber',
+      'location': _currentLocation != null ? _currentLocation!.toJson() : null,
       'device': {
         'model': _cpuInfo?['model'] ?? 'Unknown',
         'hardware': _cpuInfo?['hardware'] ?? 'Unknown',
@@ -169,13 +446,10 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
   }
 
   Future<void> _checkUpdates() async {
-    // Show a loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
@@ -183,15 +457,13 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
         Uri.parse('https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest'),
       );
 
-      // Dismiss loading indicator
       if (mounted) Navigator.of(context).pop();
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
-        final latestTag = json['tag_name'] as String; // e.g., "v1.0.1" or "v1.0.0"
-        final latestVersion = latestTag.replaceAll(RegExp(r'[^\d\.]'), ''); // extract digits and dots
+        final latestTag = json['tag_name'] as String;
+        final latestVersion = latestTag.replaceAll(RegExp(r'[^\d\.]'), '');
 
-        // Simple version comparison
         if (_isNewerVersion(_appVersion, latestVersion)) {
           final assets = json['assets'] as List<dynamic>;
           String? downloadUrl;
@@ -207,13 +479,10 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
         } else {
           _showNoUpdateDialog();
         }
-      } else if (response.statusCode == 404) {
-        _showErrorDialog('Repository or releases not found. Ensure the owner and repository names are configured correctly.');
       } else {
-        _showErrorDialog('Failed to check for updates. GitHub API responded with status ${response.statusCode}');
+        _showErrorDialog('Failed to check for updates. Status ${response.statusCode}');
       }
     } catch (e) {
-      // Dismiss loading indicator if it's still showing
       if (mounted) Navigator.of(context).pop();
       _showErrorDialog('Network error checking updates: $e');
     }
@@ -235,26 +504,27 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Update Available! 🚀'),
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Update Available! 🚀', style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Version $tag is available (Current: v$_appVersion).'),
+            Text('Version $tag is available (Current: v$_appVersion).', style: const TextStyle(color: Color(0xFF94A3B8))),
             const SizedBox(height: 12),
             if (releaseNotes.isNotEmpty) ...[
-              const Text('Release Notes:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('Release Notes:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
               const SizedBox(height: 4),
               Container(
                 constraints: const BoxConstraints(maxHeight: 120),
                 width: double.maxFinite,
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: SingleChildScrollView(
-                  child: Text(releaseNotes, style: const TextStyle(fontSize: 12)),
+                  child: Text(releaseNotes, style: const TextStyle(fontSize: 12, color: Color(0xFFCBD5E1))),
                 ),
               ),
             ],
@@ -273,7 +543,8 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               }
             },
-            child: const Text('Download APK'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+            child: const Text('Download APK', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -284,8 +555,9 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Up to Date'),
-        content: Text('You are already running the latest version (v$_appVersion).'),
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Up to Date', style: TextStyle(color: Colors.white)),
+        content: Text('You are running the latest version (v$_appVersion).', style: const TextStyle(color: Color(0xFF94A3B8))),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -300,8 +572,9 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Update Check Failed'),
-        content: Text(message),
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Error', style: TextStyle(color: Colors.white)),
+        content: Text(message, style: const TextStyle(color: Colors.redAccent)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -312,33 +585,58 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     );
   }
 
-  void _showRepoConfigDialog() {
+  void _showSettingsDialog() {
     final ownerController = TextEditingController(text: _githubOwner);
     final repoController = TextEditingController(text: _githubRepo);
+    final apiBaseUrlController = TextEditingController(text: _apiBaseUrl);
+    final apiTokenController = TextEditingController(text: _apiToken);
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Configure Updater GitHub Repo'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: ownerController,
-              decoration: const InputDecoration(
-                labelText: 'GitHub Owner (username/org)',
-                hintText: 'e.g., octocat',
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Support & API Configuration', style: TextStyle(color: Colors.white)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('SUPPORT REST API ENDPOINTS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: apiBaseUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Support API Base URL',
+                  hintText: 'e.g., https://support.domain.com/api/v1',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: repoController,
-              decoration: const InputDecoration(
-                labelText: 'Repository Name',
-                hintText: 'e.g., my-flutter-app',
+              const SizedBox(height: 12),
+              TextField(
+                controller: apiTokenController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'API Authorization Token',
+                  hintText: 'e.g., Bearer token_secret_123',
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              const Text('GITHUB RELEASES UPDATER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ownerController,
+                decoration: const InputDecoration(
+                  labelText: 'GitHub Owner (username)',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: repoController,
+                decoration: const InputDecoration(
+                  labelText: 'Repository Name',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -346,14 +644,21 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               setState(() {
                 _githubOwner = ownerController.text.trim();
                 _githubRepo = repoController.text.trim();
+                _apiBaseUrl = apiBaseUrlController.text.trim();
+                _apiToken = apiTokenController.text.trim();
               });
-              Navigator.of(context).pop();
+
+              await ApiService.setApiBaseUrl(_apiBaseUrl);
+              await ApiService.setAuthToken(_apiToken);
+
+              if (mounted) Navigator.of(context).pop();
             },
-            child: const Text('Save'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+            child: const Text('Save Settings', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -372,6 +677,13 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
     return '${count.toStringAsFixed(2)} ${suffixes[i]}';
   }
 
+  String _formatTimer(int seconds) {
+    final duration = Duration(seconds: seconds);
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final secs = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$secs';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -388,8 +700,8 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings, color: Colors.indigoAccent),
-            tooltip: 'Configure GitHub Repo',
-            onPressed: _showRepoConfigDialog,
+            tooltip: 'Configure Support API & GitHub Repo',
+            onPressed: _showSettingsDialog,
           ),
         ],
       ),
@@ -423,9 +735,21 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // App Version and Repo Header Card
+                        // Header Card
                         _buildHeaderCard(),
                         const SizedBox(height: 8),
+
+                        // Feature 1: Location Tracking Card
+                        _buildSectionHeader('Location Tracking & GPS'),
+                        _buildLocationCard(),
+
+                        // Feature 2: Screen Recorder Control Card
+                        _buildSectionHeader('Screen Recording & Support Upload'),
+                        _buildScreenRecordingCard(),
+
+                        // Support REST API Telemetry Card
+                        _buildSectionHeader('Support API Sync & Retry Queue'),
+                        _buildApiSyncCard(),
 
                         // System Spec Cards
                         _buildSectionHeader('Processor (CPU)'),
@@ -442,7 +766,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
 
                         const SizedBox(height: 24),
                         
-                        // Actions Section
+                        // Actions
                         ElevatedButton.icon(
                           onPressed: _exportData,
                           icon: const Icon(Icons.share, color: Colors.white),
@@ -478,7 +802,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
       child: Text(
         title,
         style: const TextStyle(
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: FontWeight.w600,
           color: Colors.indigoAccent,
           letterSpacing: 0.5,
@@ -492,7 +816,7 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF312E81), Color(0xFF1E1B4B)], // deep indigo
+          colors: [Color(0xFF312E81), Color(0xFF1E1B4B)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -548,15 +872,213 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Local Diagnostics Utility',
+            'Support Diagnostics Utility',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            'Target Updates Repo: $_githubOwner/$_githubRepo',
+            'Target Support API: ${_apiBaseUrl.isEmpty ? 'Not Configured' : _apiBaseUrl}',
             style: const TextStyle(fontSize: 12, color: Colors.white70, fontStyle: FontStyle.italic),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLocationCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.location_on, color: Color(0xFF10B981)),
+                    SizedBox(width: 8),
+                    Text('GPS Location Tracking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+                Switch(
+                  value: _isLocationEnabled,
+                  activeColor: const Color(0xFF10B981),
+                  onChanged: _toggleLocationConsent,
+                ),
+              ],
+            ),
+            const Divider(color: Color(0xFF334155)),
+            if (!_isLocationEnabled) ...[
+              const Text(
+                'Location tracking is disabled. Enable to send GPS coordinates and reverse-geocoded address to your support team.',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+              ),
+            ] else if (_isLocationLoading) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(12.0),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ] else if (_currentLocation != null) ...[
+              _buildSpecRow(Icons.my_location, 'Latitude', _currentLocation!.latitude.toStringAsFixed(6)),
+              const Divider(color: Color(0xFF334155)),
+              _buildSpecRow(Icons.explore, 'Longitude', _currentLocation!.longitude.toStringAsFixed(6)),
+              const Divider(color: Color(0xFF334155)),
+              _buildSpecRow(Icons.gps_fixed, 'Accuracy', '±${_currentLocation!.accuracy.toStringAsFixed(1)} m'),
+              const Divider(color: Color(0xFF334155)),
+              _buildSpecRow(Icons.home, 'Address', _currentLocation!.address),
+              const Divider(color: Color(0xFF334155)),
+              _buildSpecRow(Icons.flag, 'Country', _currentLocation!.country),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _fetchLocation,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Refresh GPS Position'),
+                ),
+              ),
+            ] else ...[
+              const Text('Unable to retrieve location. Please check device GPS settings.', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScreenRecordingCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.videocam, color: Colors.redAccent),
+                    SizedBox(width: 8),
+                    Text('Screen & Audio Recorder', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+                if (_isRecording)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 12),
+                        const SizedBox(width: 4),
+                        Text(_formatTimer(_recordedSeconds), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const Divider(color: Color(0xFF334155)),
+            Row(
+              children: [
+                const Text('Include Microphone Audio', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14)),
+                const Spacer(),
+                Checkbox(
+                  value: _recordAudio,
+                  activeColor: const Color(0xFF6366F1),
+                  onChanged: _isRecording
+                      ? null
+                      : (val) {
+                          setState(() {
+                            _recordAudio = val ?? true;
+                          });
+                        },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _toggleScreenRecording,
+                icon: Icon(_isRecording ? Icons.stop : Icons.fiber_manual_record, color: Colors.white),
+                label: Text(_isRecording ? 'Stop Recording & Upload' : 'Start Screen Recording', style: const TextStyle(fontSize: 15, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isRecording ? Colors.redAccent : const Color(0xFF6366F1),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildApiSyncCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.cloud_sync, color: Color(0xFF6366F1)),
+                    SizedBox(width: 8),
+                    Text('Support Website Sync', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+                if (_queuedPayloads > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text('$_queuedPayloads Pending', style: const TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+              ],
+            ),
+            const Divider(color: Color(0xFF334155)),
+            const Text(
+              'Transmits location coordinates, device specifications, and battery telemetry directly to your support team REST API endpoint.',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isSyncingApi ? null : _sendTelemetryData,
+                    icon: const Icon(Icons.send, size: 16, color: Colors.white),
+                    label: const Text('Send Telemetry', style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+                  ),
+                ),
+                if (_queuedPayloads > 0) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _isSyncingApi ? null : _retryPendingQueue,
+                    icon: const Icon(Icons.replay, size: 16, color: Colors.orangeAccent),
+                    label: const Text('Retry Queue', style: TextStyle(color: Colors.orangeAccent)),
+                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.orangeAccent)),
+                  ),
+                ]
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
