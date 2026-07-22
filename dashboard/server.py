@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Hardware Diagnostics - Support Live Monitoring Server
-Runs a lightweight REST API backend and serves the Web Dashboard UI on port 8080.
+Runs a lightweight REST API backend and serves the Web Dashboard UI.
+Compatible with Python 3.8+ through Python 3.14+ (no cgi dependency).
 """
 
 import os
@@ -9,7 +10,6 @@ import json
 import time
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import cgi
 
 PORT = int(os.environ.get('PORT', 8080))
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +60,7 @@ class SupportDashboardHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404, "File not found")
 
-        elif self.path == '/api/v1/support/devices':
+        elif self.path in ['/api/v1/support/devices', '/support/devices']:
             now_ts = time.time()
             devices_list = []
             active_count = 0
@@ -100,7 +100,7 @@ class SupportDashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         global devices_store, recordings_store, total_telemetry_count
 
-        if self.path in ['/api/v1/support/telemetry', '/api/v1/support/telemetry/live']:
+        if self.path in ['/api/v1/support/telemetry', '/api/v1/support/telemetry/live', '/support/telemetry']:
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             
@@ -125,23 +125,43 @@ class SupportDashboardHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
-        elif self.path == '/api/v1/support/recordings':
+        elif self.path in ['/api/v1/support/recordings', '/support/recordings']:
             try:
-                form = cgi.FieldStorage(
-                    fp=self.rfile,
-                    headers=self.headers,
-                    environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': self.headers['Content-Type']}
-                )
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length)
+                
+                content_type = self.headers.get('Content-Type', '')
+                boundary = None
+                for param in content_type.split(';'):
+                    if 'boundary=' in param:
+                        boundary = param.split('boundary=')[1].strip().strip('"').encode('utf-8')
+                        break
+                
+                dev_id = 'unknown_device'
+                filename = f"rec_{int(time.time())}.mp4"
+                file_data = b''
+                
+                if boundary:
+                    parts = body.split(b'--' + boundary)
+                    for part in parts:
+                        if b'Content-Disposition' in part:
+                            headers_part, _, data_part = part.partition(b'\r\n\r\n')
+                            data_part = data_part.rstrip(b'\r\n--')
+                            headers_str = headers_part.decode('utf-8', errors='ignore')
+                            
+                            if 'name="device_id"' in headers_str:
+                                dev_id = data_part.decode('utf-8', errors='ignore').strip()
+                            elif 'name="file"' in headers_str:
+                                if 'filename="' in headers_str:
+                                    fn = headers_str.split('filename="')[1].split('"')[0]
+                                    if fn:
+                                        filename = f"rec_{int(time.time())}_{os.path.basename(fn)}"
+                                file_data = data_part
 
-                dev_id = form.getvalue('device_id', 'unknown_device')
-                file_field = form['file'] if 'file' in form else None
-
-                if file_field is not None and file_field.filename:
-                    filename = f"rec_{int(time.time())}_{os.path.basename(file_field.filename)}"
+                if file_data:
                     save_path = os.path.join(UPLOADS_DIR, filename)
-
                     with open(save_path, 'wb') as f:
-                        f.write(file_field.file.read())
+                        f.write(file_data)
 
                     rec_info = {
                         'filename': filename,
@@ -176,8 +196,7 @@ def run_server():
     httpd = HTTPServer(server_address, SupportDashboardHandler)
     print(f"\n=======================================================")
     print(f" 🚀 Hardware Diagnostics Support Live Server Running")
-    print(f" 💻 Laptop Web UI: http://localhost:{PORT}")
-    print(f" 📱 Mobile API Endpoint: http://<YOUR_LAPTOP_IP>:{PORT}/api/v1")
+    print(f" 💻 Port: {PORT}")
     print(f"=======================================================\n")
     try:
         httpd.serve_forever()
