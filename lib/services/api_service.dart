@@ -10,7 +10,7 @@ class ApiService {
   static const String _keyAuthToken = 'support_api_auth_token';
   static const String _keyRetryQueue = 'support_api_retry_queue';
 
-  static const String _defaultApiUrl = '';
+  static const String _defaultApiUrl = 'https://hardware-diagnostics.onrender.com/api/v1';
 
   static Future<String> getApiBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
