@@ -19,7 +19,7 @@
     <application
         android:label="Hardware Diagnostics"
         android:name="${applicationName}"
-        android:icon="@drawable/ic_launcher_app">
+        android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"
