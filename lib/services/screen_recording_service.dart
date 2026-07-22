@@ -33,6 +33,7 @@ class ScreenRecordingService {
       final RecordOutput? result = await _recorder.startRecordScreen(
         fileName: fileName,
         dirPathToSave: folderPath,
+        audioEnable: audio,
         addTimeCode: true,
       );
 
