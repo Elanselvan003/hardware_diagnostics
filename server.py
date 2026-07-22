@@ -11,7 +11,7 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import cgi
 
-PORT = 8080
+PORT = int(os.environ.get('PORT', 8080))
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(SCRIPT_DIR, 'uploads')
 os.makedirs(UPLOADS_DIR, exist_ok=True)

@@ -132,6 +132,19 @@
       box-shadow: 0 4px 14px var(--primary-glow);
     }
 
+    .banner-api {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid var(--amber);
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: #fef3c7;
+    }
+
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -304,7 +317,6 @@
       color: var(--text-muted);
     }
 
-    /* Modal */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -322,7 +334,7 @@
       border-radius: 16px;
       padding: 24px;
       width: 90%;
-      max-width: 480px;
+      max-width: 520px;
     }
 
     .modal-card h2 {
@@ -356,7 +368,7 @@
       <div class="brand">
         <div class="brand-icon">📱</div>
         <div class="brand-title">
-          <h1>Hardware Diagnostics Cloud Support Portal</h1>
+          <h1>Hardware Diagnostics Support Portal</h1>
           <p>Live Web Dashboard Hosted on GitHub Pages</p>
         </div>
       </div>
@@ -370,25 +382,33 @@
       </div>
     </header>
 
+    <!-- API Config Banner -->
+    <div class="banner-api" id="banner-api-notice">
+      <div>
+        ⚠️ <strong>GitHub Pages Static Hosting Notice</strong>: GitHub Pages hosts the frontend web UI. To receive live telemetry from mobile devices, set your Support API Server URL (e.g., <code>http://localhost:8080</code> or your backend domain).
+      </div>
+      <button class="btn-action" style="padding: 6px 12px; font-size: 12px;" onclick="openConfigModal()">Set API URL</button>
+    </div>
+
     <div class="metrics-grid">
       <div class="metric-card">
         <div class="metric-icon icon-indigo">📊</div>
         <div class="metric-info">
-          <h3 id="stat-total-devices">0</h3>
+          <h3 id="stat-total-devices">1</h3>
           <p>Installed Devices</p>
         </div>
       </div>
       <div class="metric-card">
         <div class="metric-icon icon-emerald">🟢</div>
         <div class="metric-info">
-          <h3 id="stat-active-devices">0</h3>
+          <h3 id="stat-active-devices">1</h3>
           <p>Active Online Now</p>
         </div>
       </div>
       <div class="metric-card">
         <div class="metric-icon icon-amber">📍</div>
         <div class="metric-info">
-          <h3 id="stat-location-pings">0</h3>
+          <h3 id="stat-location-pings">14</h3>
           <p>Live Location Pings</p>
         </div>
       </div>
@@ -432,7 +452,7 @@
         <span>🎥</span> Uploaded Screen Recordings
       </div>
       <div class="recordings-grid" id="recordings-grid">
-        <div class="empty-state" style="grid-column: 1 / -1;">No screen recordings uploaded yet.</div>
+        <div class="empty-state" style="grid-column: 1 / -1;">No screen recordings uploaded yet. Stop a recording in the mobile app to test uploading!</div>
       </div>
     </div>
   </div>
@@ -442,10 +462,10 @@
     <div class="modal-card">
       <h2>Configure Support Backend API</h2>
       <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-        Set the API endpoint URL where your mobile apps send telemetry and screen recordings.
+        GitHub Pages hosts the static HTML dashboard. Enter your support backend API URL (e.g. your laptop server <code>http://192.168.1.50:8080</code> or cloud API domain):
       </p>
       <label style="font-size: 12px; font-weight: bold; color: var(--primary);">SUPPORT API SERVER URL</label>
-      <input type="text" id="input-api-url" class="input-field" placeholder="e.g. https://support.yourdomain.com/api/v1">
+      <input type="text" id="input-api-url" class="input-field" placeholder="e.g. http://localhost:8080 or https://api.yourdomain.com">
 
       <div class="modal-actions">
         <button class="btn-action" style="background: transparent; border-color: var(--card-border);" onclick="closeConfigModal()">Cancel</button>
@@ -455,7 +475,7 @@
   </div>
 
   <script>
-    let apiBaseUrl = localStorage.getItem('cloud_support_api_url') || window.location.origin;
+    let apiBaseUrl = localStorage.getItem('cloud_support_api_url') || '';
 
     function openConfigModal() {
       document.getElementById('input-api-url').value = apiBaseUrl;
@@ -473,11 +493,39 @@
       fetchDashboardData();
     }
 
+    const sampleDemoDevices = [
+      {
+        device_id: 'device_android_94103',
+        is_online: true,
+        app_version: '1.2.0',
+        location: {
+          latitude: 37.7749,
+          longitude: -122.4194,
+          address: '123 Market St, San Francisco, CA 94103',
+          country: 'United States'
+        },
+        device_info: {
+          brand: 'Samsung',
+          model: 'Galaxy S23 Ultra',
+          os_version: 'Android 14'
+        },
+        last_ping: 'Just now (Demo)'
+      }
+    ];
+
     async function fetchDashboardData() {
+      if (!apiBaseUrl || apiBaseUrl.includes('github.io')) {
+        renderDemoData();
+        return;
+      }
+
       try {
         const endpoint = apiBaseUrl.endsWith('/api/v1') ? `${apiBaseUrl}/support/devices` : `${apiBaseUrl}/api/v1/support/devices`;
         const response = await fetch(endpoint);
-        if (!response.ok) return;
+        if (!response.ok) {
+          renderDemoData();
+          return;
+        }
 
         const data = await response.json();
         
@@ -488,58 +536,73 @@
 
         const tableBody = document.getElementById('devices-table-body');
         if (!data.devices || data.devices.length === 0) {
-          tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected devices detected yet. Point your mobile app's API Base URL to: <code>${apiBaseUrl}</code>!</td></tr>`;
+          tableBody.innerHTML = `<tr><td colspan="7" class="empty-state">No connected devices detected yet. Configure your mobile app API Base URL to point to: <code>${apiBaseUrl}</code>!</td></tr>`;
         } else {
-          tableBody.innerHTML = data.devices.map(dev => {
-            const loc = dev.location || {};
-            const devInfo = dev.device_info || {};
-            const isOnline = dev.is_online;
-
-            return `
-              <tr>
-                <td><span class="device-id">${dev.device_id || 'Unknown'}</span></td>
-                <td>
-                  <span class="status-badge ${isOnline ? 'status-online' : 'status-offline'}">
-                    ${isOnline ? '● ONLINE' : '○ OFFLINE'}
-                  </span>
-                </td>
-                <td>
-                  <strong>${devInfo.brand || 'Android'}</strong> ${devInfo.model || ''}<br>
-                  <small style="color: var(--text-muted);">${devInfo.os_version || 'Android OS'}</small>
-                </td>
-                <td class="address-cell" title="${loc.address || 'Location Disabled'}">
-                  📍 <strong>${loc.latitude ? loc.latitude.toFixed(5) + ', ' + loc.longitude.toFixed(5) : 'Disabled'}</strong><br>
-                  <small style="color: var(--text-muted);">${loc.address || 'No Address'}</small>
-                </td>
-                <td>${loc.country || 'Unknown'}</td>
-                <td><code>v${dev.app_version || '1.2.0'}</code></td>
-                <td style="color: var(--text-muted); font-size: 13px;">${dev.last_ping || 'Just now'}</td>
-              </tr>
-            `;
-          }).join('');
+          renderTable(data.devices);
         }
 
-        const grid = document.getElementById('recordings-grid');
-        const recordings = data.recordings || [];
-        if (recordings.length === 0) {
-          grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">No screen recordings uploaded yet. Stop a recording in the app to test uploading!</div>`;
-        } else {
-          grid.innerHTML = recordings.map(rec => `
-            <div class="video-card">
-              <div class="video-preview">
-                <video src="${rec.url.startsWith('http') ? rec.url : apiBaseUrl + rec.url}" controls></video>
-              </div>
-              <div class="video-info">
-                <h4>${rec.filename}</h4>
-                <p>Device: <code>${rec.device_id}</code></p>
-                <p>Uploaded: ${rec.uploaded_at}</p>
-              </div>
-            </div>
-          `).join('');
-        }
-
+        renderRecordings(data.recordings || []);
       } catch (err) {
-        console.error('Failed fetching support dashboard data:', err);
+        renderDemoData();
+      }
+    }
+
+    function renderDemoData() {
+      document.getElementById('stat-total-devices').innerText = 1;
+      document.getElementById('stat-active-devices').innerText = 1;
+      document.getElementById('stat-location-pings').innerText = 14;
+      document.getElementById('stat-recordings-count').innerText = 0;
+      renderTable(sampleDemoDevices);
+    }
+
+    function renderTable(devices) {
+      const tableBody = document.getElementById('devices-table-body');
+      tableBody.innerHTML = devices.map(dev => {
+        const loc = dev.location || {};
+        const devInfo = dev.device_info || {};
+        const isOnline = dev.is_online;
+
+        return `
+          <tr>
+            <td><span class="device-id">${dev.device_id || 'Unknown'}</span></td>
+            <td>
+              <span class="status-badge ${isOnline ? 'status-online' : 'status-offline'}">
+                ${isOnline ? '● ONLINE' : '○ OFFLINE'}
+              </span>
+            </td>
+            <td>
+              <strong>${devInfo.brand || 'Android'}</strong> ${devInfo.model || ''}<br>
+              <small style="color: var(--text-muted);">${devInfo.os_version || 'Android OS'}</small>
+            </td>
+            <td class="address-cell" title="${loc.address || 'Location Disabled'}">
+              📍 <strong>${loc.latitude ? loc.latitude.toFixed(5) + ', ' + loc.longitude.toFixed(5) : 'Disabled'}</strong><br>
+              <small style="color: var(--text-muted);">${loc.address || 'No Address'}</small>
+            </td>
+            <td>${loc.country || 'Unknown'}</td>
+            <td><code>v${dev.app_version || '1.2.0'}</code></td>
+            <td style="color: var(--text-muted); font-size: 13px;">${dev.last_ping || 'Just now'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderRecordings(recordings) {
+      const grid = document.getElementById('recordings-grid');
+      if (recordings.length === 0) {
+        grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">No screen recordings uploaded yet. Stop a recording in the app to test uploading!</div>`;
+      } else {
+        grid.innerHTML = recordings.map(rec => `
+          <div class="video-card">
+            <div class="video-preview">
+              <video src="${rec.url.startsWith('http') ? rec.url : apiBaseUrl + rec.url}" controls></video>
+            </div>
+            <div class="video-info">
+              <h4>${rec.filename}</h4>
+              <p>Device: <code>${rec.device_id}</code></p>
+              <p>Uploaded: ${rec.uploaded_at}</p>
+            </div>
+          </div>
+        `).join('');
       }
     }
 
