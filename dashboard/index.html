@@ -560,8 +560,14 @@
               <small style="color: var(--text-muted);">${devInfo.os_version || 'Android OS'}</small>
             </td>
             <td class="address-cell" title="${loc.address || 'Location Disabled'}">
-              📍 <strong>${loc.latitude ? loc.latitude.toFixed(5) + ', ' + loc.longitude.toFixed(5) : 'Disabled'}</strong><br>
-              <small style="color: var(--text-muted);">${loc.address || 'No Address'}</small>
+              ${loc.latitude ? `
+                <a href="https://www.google.com/maps?q=${loc.latitude},${loc.longitude}" target="_blank" style="color: #a5b4fc; text-decoration: underline; font-weight: 600;">
+                  📍 ${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)} ↗
+                </a><br>
+                <small style="color: var(--text-muted);">${loc.address || 'No Address'}</small>
+              ` : `
+                <span style="color: var(--text-muted);">Disabled</span>
+              `}
             </td>
             <td>${loc.country || 'Unknown'}</td>
             <td><code>v${dev.app_version || '1.2.0'}</code></td>

@@ -1100,13 +1100,23 @@ class _DiagnosticsDashboardState extends State<DiagnosticsDashboard> {
               const Divider(color: Color(0xFF334155)),
               _buildSpecRow(Icons.flag, 'Country', _currentLocation!.country),
               const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _fetchLocation,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Refresh GPS Position'),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      final url = 'https://www.google.com/maps?q=${_currentLocation!.latitude},${_currentLocation!.longitude}';
+                      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                    },
+                    icon: const Icon(Icons.map, size: 16, color: Color(0xFF818CF8)),
+                    label: const Text('Open in Google Maps', style: TextStyle(color: Color(0xFF818CF8))),
+                  ),
+                  TextButton.icon(
+                    onPressed: _fetchLocation,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Refresh GPS Position'),
+                  ),
+                ],
               ),
             ] else ...[
               const Text('Unable to retrieve location. Please check device GPS settings.', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
